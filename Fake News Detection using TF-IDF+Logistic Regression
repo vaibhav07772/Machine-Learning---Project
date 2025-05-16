@@ -1,0 +1,84 @@
+import pandas as pd
+import numpy as np
+import string
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report,accuracy_score
+import re
+
+#Load dataset
+df = pd.read_csv("C:\\Users\\Vaibhav Singh\\OneDrive\\train.csv")[['text', 'label']]
+df.dropna(inplace=True) #--->Remove rows with NaN
+
+# 2. Text Cleaning Function
+def clean_text(text):
+    text = text.lower()  # lowercase
+    text = re.sub(r'👦.*?👦', '', text)  # remove text in brackets
+    text = re.sub(r'https?://\S+|www\.\S+', '', text)  # remove links
+    text = re.sub(r'<.*?>+', '', text)  # remove HTML tags
+    text = re.sub(r'[%s]' % re.escape(string.punctuation), '', text)  # remove punctuation
+    text = re.sub(r'\n', ' ', text)  # remove newline
+    text = re.sub(r'\w*\d\w*', '', text)  # remove words containing numbers
+    return text
+
+##Apply Cleaning(FAKE = 0, REAL = 1)
+df['clean_text'] = df['text'].apply(clean_text)
+
+##Encode Labels
+df['label'] = df['label'].map({'REAL': 1, 'FAKE': 0})
+df.dropna(inplace=True)#again drop rows if any bacame NaN after label encoding
+
+#TF-IDF Vectorization 
+tfidf_vectorizer = TfidfVectorizer(max_df=0.7,stop_words='english',max_features=50000)
+x = tfidf_vectorizer.fit_transform(df['clean_text'])
+y = df['label']
+
+##Train-Test split
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42 )
+
+#Logstic Regression
+model = LogisticRegression(C=1.0,max_iter=500,solver='saga')
+model.fit(x_train, y_train)
+
+model.score(x_train, y_train)*100, model.score(x_test, y_test)*100
+
+## Evaluate
+y_pred = model.predict(x_test)
+print("Accuracy:",accuracy_score(y_test, y_pred))
+print(classification_report(y_test, y_pred))
+
+##save the trained model
+import joblib
+
+##save the trained model
+joblib.dump(model, "Fake_news_model.pkl")
+
+##Save the fitted TF-IDF vectorizer
+joblib.dump(tfidf_vectorizer,"tfidf_vectorizer.pkl")
+
+
+# 1. Import load model & vectorizer
+model = joblib.load("Fake_news_model.pkl")
+tfidf_vectorizer = joblib.load("tfidf_vectorizer.pkl")
+
+new_text = """Share This Baylee Luciani (left), Screenshot of what Baylee caught on FaceTime (right) 
+The closest Baylee Luciani could get to her boyfriend, whoâ€™s attending college in Austin, was through video online chat. The couple had regular â€œdatesâ€ this way to bridge the 200-mile distance between them. However, the endearing arrangement quickly came to an end after his FaceTime was left on and caught something that left his girlfriend horrified. 
+Baylee had been discussing regular things with her boyfriend, Yale Gerstein, who was on the other side of the screen on an otherwise average evening. This video chat was not unlike all the others she had with Yale from his apartment near Austin Community College until the 19-year-old girlfriend heard some scratching sounds after FaceTime had been left on. 
+According to KRON , Baylee was mid-conversation with Yale when scratches at the door caught both of their attention and he got up from his bed, where the computer was, to see who was at his door. He barely turned the handle to open in when masked men entered the room and beat Yaleâ€™s face in and slammed him down on his bed while shoving a pistol in his cheek. The intruders didnâ€™t seem to know or care that FaceTime was still on and Bayleeâ€™s face, seen in the corner, was watching everything, terrified that she was about to see her boyfriend murdered in front of her, as she watched him fight for his life. 
+Admitting that she first thought it was a joke, seconds later, she came to the horrid realization that he was being robbed and called her dad, who was at home with her in Dallas, into the room. â€œI was scared, because they were saying Iâ€™m going to blow your head off, Iâ€™m going to kill you,â€ Baylee explained along with the chilling feeling she got when the intruder finally realized the video chat was running and looked right at her in the camera. â€œIâ€™m like wowâ€¦ seriously watching an armed robbery happen to somebody that I care about,â€ she added. Screengrabs of intruder forcing Yale down on his bed while Baylee and her father watch on FaceTime in horror 
+With a clear view of at least one intruderâ€™s face, Baylee began taking screenshots of the suspect in the act as she and her dad called the police to report what was going on. She got the pictures right in time since, seconds later, the intruder decided to disconnect the computer as he and the suspects took off with thousands of dollars worth of Yaleâ€™s music equipment. Although the boyfriendâ€™s life was spared in the traumatizing ordeal for the two of them, he said that the thieves took something from him that canâ€™t be replaced. 
+â€œI had just finished my first album as a solo artist,â€ Yale said. â€œThatâ€™s all lost,â€ since they took the recordings on the equipment, which means nothing to the thieves and everything to the victim. Itâ€™s not often that you hear of FaceTime solving crimes or potentially saving lives, which is what happened in this case. Although it was difficult to watch, Baylee, being there through technology, was an instrumental part in protecting Yale, who hopefully learned that he better take advantage of Texasâ€™ great gun laws and arm himself with more than just a computer."""
+
+
+##Clean text
+cleaned_text = re.sub(r'[^a-zA-Z\s]','', new_text).lower()
+
+vectorized_text = tfidf_vectorizer.transform([cleaned_text])
+prediction = model.predict(vectorized_text)[0]
+
+## Output with threshould adjustment (0.3 instead of 0.5)
+pred_proba = model.predict_proba(vectorized_text)[0]
+final_pred = "FAKE" if pred_proba[0] > 0.7 else "REAL"
+
+print(f"prediction: {final_pred} (confidence: FAKE {pred_proba[0]:.2%}, REAL {pred_proba[1]:.2%})")
